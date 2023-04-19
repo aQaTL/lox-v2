@@ -1,4 +1,3 @@
-use crate::value::print_value;
 use crate::{Chunk, OpCode};
 
 pub fn disassemble_chunk(chunk: *mut Chunk, name: &str) {
@@ -11,7 +10,7 @@ pub fn disassemble_chunk(chunk: *mut Chunk, name: &str) {
 	}
 }
 
-fn disassemble_instruction(chunk: *mut Chunk, offset: usize) -> usize {
+pub fn disassemble_instruction(chunk: *mut Chunk, offset: usize) -> usize {
 	unsafe {
 		print!("{offset:04} ");
 
@@ -24,6 +23,7 @@ fn disassemble_instruction(chunk: *mut Chunk, offset: usize) -> usize {
 		let instruction: u8 = *(*chunk).code.add(offset);
 		match instruction.try_into() {
 			Ok(opcode @ OpCode::Constant) => constant_instruction(opcode, chunk, offset),
+			Ok(opcode @ OpCode::Negate) => simple_instruction(opcode, offset),
 			Ok(opcode @ OpCode::Return) => simple_instruction(opcode, offset),
 			Err(err) => {
 				println!("{err}");
@@ -42,7 +42,7 @@ fn constant_instruction(op_code: OpCode, chunk: *mut Chunk, offset: usize) -> us
 	unsafe {
 		let constant = *(*chunk).code.add(offset + 1);
 		print!("{op_code:<16} {constant:>4} '");
-		print_value(*(*chunk).constants.values.add(constant.into()));
+		print!("{}", *(*chunk).constants.values.add(constant.into()));
 		println!("'");
 		offset + 2
 	}

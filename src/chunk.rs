@@ -7,13 +7,15 @@ use std::ptr;
 #[repr(u8)]
 pub enum OpCode {
 	Constant = 0,
-	Return = 1,
+	Negate,
+	Return,
 }
 
 impl Display for OpCode {
 	fn fmt(&self, f: &mut Formatter) -> std::fmt::Result {
 		match self {
 			OpCode::Constant => write!(f, "OP_CONSTANT"),
+			OpCode::Negate => write!(f, "OP_NEGATE"),
 			OpCode::Return => write!(f, "OP_RETURN"),
 		}
 	}
@@ -90,6 +92,7 @@ impl Chunk {
 		}
 	}
 
+	/// Adds `value` to `Chunk.constants` and returns it's index
 	pub fn add_constant(chunk: *mut Chunk, value: Value) -> u8 {
 		unsafe {
 			ValueArray::write(&mut (*chunk).constants, value);
