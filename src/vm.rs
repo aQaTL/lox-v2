@@ -109,6 +109,14 @@ fn read_constant() -> Value {
 	}
 }
 
+macro_rules! binary_op {
+	($op:tt) => {{
+		let b = VM::pop();
+		let a = VM::pop();
+		VM::push(a $op b);
+	}}
+}
+
 fn run() -> Result<(), InterpretError> {
 	unsafe {
 		loop {
@@ -128,6 +136,10 @@ fn run() -> Result<(), InterpretError> {
 					let constant = read_constant();
 					VM::push(constant);
 				}
+				OpCode::Add => binary_op!(+),
+				OpCode::Subtract => binary_op!(-),
+				OpCode::Multiply => binary_op!(*),
+				OpCode::Divide => binary_op!(/),
 				OpCode::Negate => VM::push(-VM::pop()),
 				OpCode::Return => {
 					println!("{}", VM::pop());

@@ -11,6 +11,7 @@ pub fn disassemble_chunk(chunk: *mut Chunk, name: &str) {
 }
 
 pub fn disassemble_instruction(chunk: *mut Chunk, offset: usize) -> usize {
+	use OpCode::*;
 	unsafe {
 		print!("{offset:04} ");
 
@@ -22,9 +23,10 @@ pub fn disassemble_instruction(chunk: *mut Chunk, offset: usize) -> usize {
 
 		let instruction: u8 = *(*chunk).code.add(offset);
 		match instruction.try_into() {
-			Ok(opcode @ OpCode::Constant) => constant_instruction(opcode, chunk, offset),
-			Ok(opcode @ OpCode::Negate) => simple_instruction(opcode, offset),
-			Ok(opcode @ OpCode::Return) => simple_instruction(opcode, offset),
+			Ok(opcode @ Constant) => constant_instruction(opcode, chunk, offset),
+			Ok(opcode @ (Add | Subtract | Multiply | Divide | Negate | Return)) => {
+				simple_instruction(opcode, offset)
+			}
 			Err(err) => {
 				println!("{err}");
 				offset + 1

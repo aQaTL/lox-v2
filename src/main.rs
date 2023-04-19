@@ -17,6 +17,18 @@ fn main() {
 	let constant = Chunk::add_constant(&mut chunk, 1.2);
 	Chunk::write(&mut chunk, OpCode::Constant as u8, 143);
 	Chunk::write(&mut chunk, constant, 143);
+
+	let constant = Chunk::add_constant(&mut chunk, 3.4);
+	Chunk::write(&mut chunk, OpCode::Constant as u8, 143);
+	Chunk::write(&mut chunk, constant, 143);
+
+	Chunk::write(&mut chunk, OpCode::Add as u8, 143);
+
+	let constant = Chunk::add_constant(&mut chunk, 5.6);
+	Chunk::write(&mut chunk, OpCode::Constant as u8, 143);
+	Chunk::write(&mut chunk, constant, 143);
+
+	Chunk::write(&mut chunk, OpCode::Divide as u8, 143);
 	Chunk::write(&mut chunk, OpCode::Negate as u8, 143);
 
 	Chunk::write(&mut chunk, OpCode::Return as u8, 143);
