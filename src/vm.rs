@@ -1,6 +1,6 @@
 use crate::debug::disassemble_instruction;
 use crate::value::Value;
-use crate::{chunk, Chunk, OpCode};
+use crate::{chunk, compiler, Chunk, OpCode};
 use std::fmt::{Display, Formatter};
 
 static mut vm: VM = VM {
@@ -71,12 +71,9 @@ impl VM {
 
 	pub fn free() {}
 
-	pub fn interpret(chunk: *mut Chunk) -> Result<(), InterpretError> {
-		unsafe {
-			vm.chunk = chunk;
-			vm.ip = (*vm.chunk).code;
-			run()
-		}
+	pub fn interpret(source: &str) -> Result<(), InterpretError> {
+		compiler::compile(source);
+		Ok(())
 	}
 
 	pub fn push(value: Value) {
