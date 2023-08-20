@@ -8,3 +8,4 @@ default = []
 debug_trace_execution = []
 
 [dependencies]
+thiserror = "1.0.47"

@@ -1,5 +1,8 @@
-use crate::value::Value;
 use std::fmt::{Debug, Display, Formatter};
+
+use thiserror::Error;
+
+use crate::value::Value;
 
 #[derive(Debug, Copy, Clone)]
 #[repr(u8)]
@@ -33,16 +36,9 @@ impl Display for OpCode {
 	}
 }
 
-#[derive(Debug)]
+#[derive(Debug, Error)]
+#[error("Unknown opcode {0}")]
 pub struct UnknownOpCode(u8);
-
-impl Display for UnknownOpCode {
-	fn fmt(&self, f: &mut Formatter) -> std::fmt::Result {
-		write!(f, "Unknown opcode {}", self.0)
-	}
-}
-
-impl std::error::Error for UnknownOpCode {}
 
 impl TryFrom<u8> for OpCode {
 	type Error = UnknownOpCode;
@@ -66,7 +62,8 @@ pub struct Chunk {
 impl Chunk {
 	pub fn write(&mut self, v: impl Into<u8>, line: usize) {
 		self.code.push(v.into());
-		self.lines.push(line);
+		self.lines.resize_with(self.code.len(), Default::default);
+		self.lines.insert(self.code.len() - 1, line);
 	}
 
 	pub fn write_constant(&mut self, v: Value) -> usize {
@@ -88,8 +85,11 @@ impl Chunk {
 		let mut iter = self.iter();
 		loop {
 			let offset = iter.offset;
+
 			match iter.next() {
-				Some(Ok(instruction)) => write!(w, "\n{offset:04} {instruction}")?,
+				Some(Ok(instruction)) => {
+					self.disassemble_instruction_to_write(offset, &instruction, w)?
+				}
 				Some(Err(err)) => write!(w, "\n{offset:04} {err}")?,
 				None => break,
 			}
@@ -98,35 +98,56 @@ impl Chunk {
 		Ok(())
 	}
 
-	pub fn disassemble_instruction(
+	pub fn disassemble_instruction_to_write<W>(
 		&self,
 		offset: usize,
-	) -> Option<Result<Instruction, UnknownOpCode>> {
-		let instruction = self.code.get(offset)?;
-		let line = *self.lines.get(offset)?;
+		instruction: &Instruction,
+		w: &mut W,
+	) -> std::fmt::Result
+	where
+		W: std::fmt::Write,
+	{
+		let line = self
+			.lines
+			.get(offset)
+			.cloned()
+			.expect("code and lines arrays out of sync");
+
 		let same_line = offset
 			.checked_sub(1)
 			.and_then(|offset| self.lines.get(offset))
 			.map(|previous_line| line == *previous_line)
 			.unwrap_or_default();
 
+		write!(w, "{offset:04} ")?;
+
+		match same_line {
+			true => write!(w, "   | ")?,
+			false => write!(w, "{:>4} ", line)?,
+		}
+
+		write!(w, "{instruction}")?;
+
+		Ok(())
+	}
+
+	pub fn decode_instruction(&self, offset: usize) -> Option<Result<Instruction, UnknownOpCode>> {
+		let instruction = self.code.get(offset)?;
+
 		let opcode = match OpCode::try_from(*instruction) {
 			Ok(v) => v,
 			Err(err) => return Some(Err(err)),
 		};
+
 		match opcode {
-			OpCode::Return => Some(Ok(Instruction::simple(opcode, line, same_line))),
+			OpCode::Return => Some(Ok(Instruction::simple(opcode))),
+
 			OpCode::Constant => {
 				let constant_idx = *self.code.get(offset + 1)? as usize;
 				let constant = *self.constants.get(constant_idx)?;
-				Some(Ok(Instruction::constant(
-					opcode,
-					line,
-					same_line,
-					constant,
-					constant_idx,
-				)))
+				Some(Ok(Instruction::constant(opcode, constant, constant_idx)))
 			}
+
 			_ => unimplemented!(),
 		}
 	}
@@ -145,46 +166,59 @@ impl<'a> ChunkIter<'a> {
 	pub fn new(chunk: &'a Chunk) -> Self {
 		ChunkIter { chunk, offset: 0 }
 	}
+
+	pub fn with_offset(self) -> ChunkWithOffsetIter<'a> {
+		ChunkWithOffsetIter { chunk_iter: self }
+	}
 }
 
 impl<'a> Iterator for ChunkIter<'a> {
 	type Item = Result<Instruction, UnknownOpCode>;
 
 	fn next(&mut self) -> Option<Self::Item> {
-		match self.chunk.disassemble_instruction(self.offset) {
-			Some(Ok(instruction)) => {
-				self.offset += instruction.byte_len();
-				Some(Ok(instruction))
-			}
-			err => err,
+		let instruction = self.chunk.decode_instruction(self.offset);
+		if let Some(Ok(ref instruction)) = instruction {
+			self.offset += instruction.byte_len();
+		}
+		instruction
+	}
+}
+
+pub struct ChunkWithOffsetIter<'a> {
+	chunk_iter: ChunkIter<'a>,
+}
+
+impl<'a> Iterator for ChunkWithOffsetIter<'a> {
+	type Item = Result<(Instruction, usize), UnknownOpCode>;
+
+	fn next(&mut self) -> Option<Self::Item> {
+		let offset = self.chunk_iter.offset;
+		match self.chunk_iter.next() {
+			Some(Ok(instruction)) => Some(Ok((instruction, offset))),
+			Some(Err(err)) => Some(Err(err)),
+			None => None,
 		}
 	}
 }
 
 #[derive(Clone, Debug)]
 pub struct Instruction {
-	kind: InstructionKind,
-	opcode: OpCode,
-	line: usize,
-	same_line: bool,
+	pub kind: InstructionKind,
+	pub opcode: OpCode,
 }
 
 impl Instruction {
-	pub fn simple(opcode: OpCode, line: usize, same_line: bool) -> Self {
+	pub fn simple(opcode: OpCode) -> Self {
 		Instruction {
 			kind: InstructionKind::Simple,
 			opcode,
-			line,
-			same_line,
 		}
 	}
 
-	pub fn constant(opcode: OpCode, line: usize, same_line: bool, v: Value, idx: usize) -> Self {
+	pub fn constant(opcode: OpCode, v: Value, idx: usize) -> Self {
 		Instruction {
 			kind: InstructionKind::Constant { v, idx },
 			opcode,
-			line,
-			same_line,
 		}
 	}
 
@@ -195,10 +229,6 @@ impl Instruction {
 
 impl Display for Instruction {
 	fn fmt(&self, f: &mut Formatter) -> std::fmt::Result {
-		match self.same_line {
-			true => write!(f, "   | ")?,
-			false => write!(f, "{:>4} ", self.line)?,
-		}
 		write!(f, "{:<16} ", self.opcode)?;
 		match self.kind {
 			InstructionKind::Simple => (),
@@ -209,7 +239,7 @@ impl Display for Instruction {
 }
 
 #[derive(Debug, Clone, Copy)]
-enum InstructionKind {
+pub enum InstructionKind {
 	Simple,
 	Constant { v: Value, idx: usize },
 }
