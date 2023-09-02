@@ -1,30 +1,46 @@
 use crate::chunk::{Chunk, OpCode};
 use crate::vm::Vm;
+use std::io::stdin;
 
 mod chunk;
+mod compiler;
+mod scanner;
 mod value;
 mod vm;
 
 fn main() {
-	let mut chunk = Chunk::default();
+	let args: Vec<String> = std::env::args().skip(1).collect();
+	let result = match args.as_slice() {
+		[] => repl(),
+		[filename] => run_file(filename),
+		_ => {
+			eprintln!("Usage:\n\tlox-v2 [path]\n");
+			std::process::exit(64);
+		}
+	};
 
-	chunk.write(OpCode::Constant, 123);
-	let constant_idx = chunk.write_constant(1.2);
-	chunk.write(constant_idx as u8, 123);
+	if let Err(err) = result {
+		eprintln!("Error: {err}");
+		std::process::exit(1);
+	}
+}
 
-	chunk.write(OpCode::Negate, 123);
+fn repl() -> Result<(), Box<dyn std::error::Error>> {
+	let mut vm = Vm::default();
 
-	chunk.write(OpCode::Constant, 123);
-	let constant_idx = chunk.write_constant(2.0);
-	chunk.write(constant_idx as u8, 123);
+	for line in stdin().lines() {
+		let line = line?;
+		vm.interpret(&line)?;
+	}
 
-	chunk.write(OpCode::Multiply, 123);
+	Ok(())
+}
 
-	chunk.write(OpCode::Return, 123);
+fn run_file(filename: &str) -> Result<(), Box<dyn std::error::Error>> {
+	let source = std::fs::read_to_string(filename)?;
 
-	// println!("{}", chunk.disassemble("test chunk"));
+	let mut vm = Vm::default();
+	vm.interpret(&source)?;
 
-	let mut vm = Vm::new(&mut chunk);
-	vm.debug = true;
-	vm.interpret().unwrap();
+	Ok(())
 }

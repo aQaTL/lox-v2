@@ -2,12 +2,12 @@ use thiserror::Error;
 
 use crate::chunk::InstructionKind;
 use crate::value::Value;
-use crate::{Chunk, OpCode};
+use crate::{compiler, Chunk, OpCode};
 
 #[derive(Debug, Error)]
 pub enum InterpretError {
 	#[error("Compile error")]
-	Compile,
+	Compile(#[from] compiler::Error),
 
 	#[error("Runtime error")]
 	Runtime,
@@ -16,33 +16,36 @@ pub enum InterpretError {
 	UnknownOpCode(#[from] crate::chunk::UnknownOpCode),
 }
 
+#[derive(Default)]
 pub struct Vm<'a> {
 	pub debug: bool,
 
-	chunk: &'a mut Chunk,
+	chunk: Option<&'a mut Chunk>,
 
 	stack: Vec<Value>,
 }
 
 impl<'a> Vm<'a> {
-	pub fn new(chunk: &'a mut Chunk) -> Self {
+	pub fn new_with_chunk(chunk: &'a mut Chunk) -> Self {
 		Vm {
 			debug: false,
-			chunk,
+			chunk: Some(chunk),
 			stack: Vec::with_capacity(256),
 		}
 	}
 
 	pub fn set_chunk(&'a mut self, chunk: &'a mut Chunk) {
-		self.chunk = chunk;
+		self.chunk = chunk.into();
 	}
 
-	pub fn interpret(&mut self) -> Result<(), InterpretError> {
+	pub fn interpret(&mut self, source: &str) -> Result<(), InterpretError> {
+		crate::compiler::compile(source, self.debug)?;
 		self.run()
 	}
 
 	pub fn run(&mut self) -> Result<(), InterpretError> {
-		let chunk_iter = self.chunk.iter().with_offset();
+		let chunk = self.chunk.as_ref().unwrap();
+		let chunk_iter = chunk.iter().with_offset();
 
 		for instruction in chunk_iter {
 			let (instruction, offset) = instruction?;
@@ -50,7 +53,7 @@ impl<'a> Vm<'a> {
 			if self.debug {
 				println!("{:?}", self.stack);
 				let mut s = String::new();
-				self.chunk
+				chunk
 					.disassemble_instruction_to_write(offset, &instruction, &mut s)
 					.unwrap();
 				println!("{s}");
