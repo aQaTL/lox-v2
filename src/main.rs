@@ -9,10 +9,16 @@ mod value;
 mod vm;
 
 fn main() {
-	let args: Vec<String> = std::env::args().skip(1).collect();
+	let mut args: Vec<String> = std::env::args().skip(1).collect();
+	let debug = if let Some(debug_param_idx) = args.iter().position(|arg| arg == "--debug") {
+		args.remove(debug_param_idx);
+		true
+	} else {
+		false
+	};
 	let result = match args.as_slice() {
-		[] => repl(),
-		[filename] => run_file(filename),
+		[] => repl(debug),
+		[filename] => run_file(filename, debug),
 		_ => {
 			eprintln!("Usage:\n\tlox-v2 [path]\n");
 			std::process::exit(64);
@@ -25,8 +31,9 @@ fn main() {
 	}
 }
 
-fn repl() -> Result<(), Box<dyn std::error::Error>> {
+fn repl(debug: bool) -> Result<(), Box<dyn std::error::Error>> {
 	let mut vm = Vm::default();
+	vm.debug = debug;
 
 	for line in stdin().lines() {
 		let line = line?;
@@ -36,10 +43,11 @@ fn repl() -> Result<(), Box<dyn std::error::Error>> {
 	Ok(())
 }
 
-fn run_file(filename: &str) -> Result<(), Box<dyn std::error::Error>> {
+fn run_file(filename: &str, debug: bool) -> Result<(), Box<dyn std::error::Error>> {
 	let source = std::fs::read_to_string(filename)?;
 
 	let mut vm = Vm::default();
+	vm.debug = debug;
 	vm.interpret(&source)?;
 
 	Ok(())

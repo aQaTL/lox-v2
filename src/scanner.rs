@@ -1,6 +1,6 @@
 use thiserror::Error;
 
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Copy, Clone, PartialEq)]
 pub enum TokenKind<'a> {
 	// Single-character
 	LeftParen,
@@ -49,17 +49,18 @@ pub enum TokenKind<'a> {
 	While,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Token<'a> {
 	pub kind: TokenKind<'a>,
 	pub line: usize,
 }
 
 #[derive(Debug, Error)]
-#[error("[line {line}] {err}")]
+#[error("[line {line}] {err} at '{lexeme}'")]
 pub struct Error {
 	err: ErrorKind,
 	line: usize,
+	lexeme: String,
 }
 
 #[derive(Debug, Error)]
@@ -201,7 +202,7 @@ impl<'a> Scanner<'a> {
 			}
 		}
 
-		let str = &self.source[(self.start + 1)..self.current];
+		let str = &self.source[(self.start + 1)..(self.current - 1)];
 		Ok(TokenKind::String(str))
 	}
 
@@ -220,7 +221,7 @@ impl<'a> Scanner<'a> {
 			}
 		}
 
-		let num = &self.source[self.start..=self.current];
+		let num = &self.source[self.start..self.current];
 		Ok(TokenKind::Number(num))
 	}
 
@@ -236,7 +237,7 @@ impl<'a> Scanner<'a> {
 	}
 
 	fn identifier_kind(&self) -> TokenKind<'a> {
-		let ident = &self.source[self.start..=self.current];
+		let ident = &self.source[self.start..=(self.current - 1)];
 		let rest = &ident[1..];
 		match ident.as_bytes()[0] {
 			b'a' if rest == "nd" => TokenKind::And,
@@ -298,6 +299,7 @@ impl<'a> Scanner<'a> {
 		Error {
 			err,
 			line: self.line,
+			lexeme: self.source[self.start..=self.current].to_string(),
 		}
 	}
 }

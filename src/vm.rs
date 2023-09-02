@@ -6,7 +6,7 @@ use crate::{compiler, Chunk, OpCode};
 
 #[derive(Debug, Error)]
 pub enum InterpretError {
-	#[error("Compile error")]
+	#[error("Compile: {0}")]
 	Compile(#[from] compiler::Error),
 
 	#[error("Runtime error")]
@@ -17,34 +17,21 @@ pub enum InterpretError {
 }
 
 #[derive(Default)]
-pub struct Vm<'a> {
+pub struct Vm {
 	pub debug: bool,
-
-	chunk: Option<&'a mut Chunk>,
 
 	stack: Vec<Value>,
 }
 
-impl<'a> Vm<'a> {
-	pub fn new_with_chunk(chunk: &'a mut Chunk) -> Self {
-		Vm {
-			debug: false,
-			chunk: Some(chunk),
-			stack: Vec::with_capacity(256),
-		}
-	}
-
-	pub fn set_chunk(&'a mut self, chunk: &'a mut Chunk) {
-		self.chunk = chunk.into();
-	}
-
+impl Vm {
 	pub fn interpret(&mut self, source: &str) -> Result<(), InterpretError> {
-		crate::compiler::compile(source, self.debug)?;
-		self.run()
+		let mut chunk = Chunk::default();
+		compiler::compile(source, &mut chunk, self.debug)?;
+		self.run(&mut chunk)?;
+		Ok(())
 	}
 
-	pub fn run(&mut self) -> Result<(), InterpretError> {
-		let chunk = self.chunk.as_ref().unwrap();
+	pub fn run(&mut self, chunk: &mut Chunk) -> Result<(), InterpretError> {
 		let chunk_iter = chunk.iter().with_offset();
 
 		for instruction in chunk_iter {
