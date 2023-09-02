@@ -12,6 +12,14 @@ fn main() {
 	let constant_idx = chunk.write_constant(1.2);
 	chunk.write(constant_idx as u8, 123);
 
+	chunk.write(OpCode::Negate, 123);
+
+	chunk.write(OpCode::Constant, 123);
+	let constant_idx = chunk.write_constant(2.0);
+	chunk.write(constant_idx as u8, 123);
+
+	chunk.write(OpCode::Multiply, 123);
+
 	chunk.write(OpCode::Return, 123);
 
 	// println!("{}", chunk.disassemble("test chunk"));

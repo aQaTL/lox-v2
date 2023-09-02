@@ -148,6 +148,12 @@ impl Chunk {
 				Some(Ok(Instruction::constant(opcode, constant, constant_idx)))
 			}
 
+			OpCode::Add | OpCode::Subtract | OpCode::Multiply | OpCode::Divide => {
+				Some(Ok(Instruction::simple(opcode)))
+			}
+
+			OpCode::Negate => Some(Ok(Instruction::simple(opcode))),
+
 			_ => unimplemented!(),
 		}
 	}

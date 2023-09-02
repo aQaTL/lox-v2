@@ -61,6 +61,30 @@ impl<'a> Vm<'a> {
 					println!("{:?}", self.stack.pop());
 					return Ok(());
 				}
+				(OpCode::Add, _) => {
+					let value_a = self.stack.pop().ok_or(InterpretError::Runtime)?;
+					let value_b = self.stack.pop().ok_or(InterpretError::Runtime)?;
+					self.stack.push(value_a + value_b);
+				}
+				(OpCode::Subtract, _) => {
+					let value_a = self.stack.pop().ok_or(InterpretError::Runtime)?;
+					let value_b = self.stack.pop().ok_or(InterpretError::Runtime)?;
+					self.stack.push(value_a - value_b);
+				}
+				(OpCode::Multiply, _) => {
+					let value_a = self.stack.pop().ok_or(InterpretError::Runtime)?;
+					let value_b = self.stack.pop().ok_or(InterpretError::Runtime)?;
+					self.stack.push(value_a * value_b);
+				}
+				(OpCode::Divide, _) => {
+					let value_a = self.stack.pop().ok_or(InterpretError::Runtime)?;
+					let value_b = self.stack.pop().ok_or(InterpretError::Runtime)?;
+					self.stack.push(value_a / value_b);
+				}
+				(OpCode::Negate, _) => {
+					let value = self.stack.pop().ok_or(InterpretError::Runtime)?;
+					self.stack.push(-value);
+				}
 				(_, InstructionKind::Constant { v, idx: _idx }) => {
 					self.stack.push(v);
 				}
