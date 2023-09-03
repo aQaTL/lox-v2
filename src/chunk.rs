@@ -8,10 +8,17 @@ use crate::value::Value;
 #[repr(u8)]
 pub enum OpCode {
 	Constant = 0,
+	Nil,
+	True,
+	False,
+	Equal,
+	Greater,
+	Less,
 	Add,
 	Subtract,
 	Multiply,
 	Divide,
+	Not,
 	Negate,
 	Return,
 }
@@ -26,11 +33,18 @@ impl Display for OpCode {
 	fn fmt(&self, f: &mut Formatter) -> std::fmt::Result {
 		match self {
 			OpCode::Constant => f.pad("OP_CONSTANT"),
+			OpCode::Nil => f.pad("OP_NIL"),
+			OpCode::True => f.pad("OP_TRUE"),
+			OpCode::False => f.pad("OP_FALSE"),
+			OpCode::Equal => f.pad("OP_EQUAL"),
+			OpCode::Greater => f.pad("OP_GREATER"),
+			OpCode::Less => f.pad("OP_LESS"),
 			OpCode::Add => f.pad("OP_ADD"),
 			OpCode::Subtract => f.pad("OP_SUBTRACT"),
 			OpCode::Multiply => f.pad("OP_MULTIPLY"),
 			OpCode::Divide => f.pad("OP_DIVIDE"),
 			OpCode::Negate => f.pad("OP_NEGATE"),
+			OpCode::Not => f.pad("OP_NOT"),
 			OpCode::Return => f.pad("OP_RETURN"),
 		}
 	}
@@ -56,7 +70,7 @@ impl TryFrom<u8> for OpCode {
 pub struct Chunk {
 	code: Vec<u8>,
 	constants: Vec<Value>,
-	lines: Vec<usize>,
+	pub lines: Vec<usize>,
 }
 
 impl Chunk {
@@ -144,17 +158,22 @@ impl Chunk {
 
 			OpCode::Constant => {
 				let constant_idx = *self.code.get(offset + 1)? as usize;
-				let constant = *self.constants.get(constant_idx)?;
+				let constant = self.constants.get(constant_idx)?.clone();
 				Some(Ok(Instruction::constant(opcode, constant, constant_idx)))
 			}
 
-			OpCode::Add | OpCode::Subtract | OpCode::Multiply | OpCode::Divide => {
-				Some(Ok(Instruction::simple(opcode)))
-			}
-
-			OpCode::Negate => Some(Ok(Instruction::simple(opcode))),
-
-			_ => unimplemented!(),
+			OpCode::Nil
+			| OpCode::False
+			| OpCode::True
+			| OpCode::Equal
+			| OpCode::Greater
+			| OpCode::Less
+			| OpCode::Add
+			| OpCode::Subtract
+			| OpCode::Multiply
+			| OpCode::Divide
+			| OpCode::Not
+			| OpCode::Negate => Some(Ok(Instruction::simple(opcode))),
 		}
 	}
 
@@ -236,7 +255,7 @@ impl Instruction {
 impl Display for Instruction {
 	fn fmt(&self, f: &mut Formatter) -> std::fmt::Result {
 		write!(f, "{:<16} ", self.opcode)?;
-		match self.kind {
+		match &self.kind {
 			InstructionKind::Simple => (),
 			InstructionKind::Constant { v, idx } => write!(f, "{idx:>4} '{v}'")?,
 		}
@@ -244,7 +263,7 @@ impl Display for Instruction {
 	}
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub enum InstructionKind {
 	Simple,
 	Constant { v: Value, idx: usize },

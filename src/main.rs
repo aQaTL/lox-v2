@@ -1,12 +1,5 @@
-use crate::chunk::{Chunk, OpCode};
-use crate::vm::Vm;
+use lox_v2::vm::Vm;
 use std::io::stdin;
-
-mod chunk;
-mod compiler;
-mod scanner;
-mod value;
-mod vm;
 
 fn main() {
 	let mut args: Vec<String> = std::env::args().skip(1).collect();

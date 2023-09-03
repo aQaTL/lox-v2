@@ -259,7 +259,7 @@ impl<'a> Scanner<'a> {
 			},
 			b't' if ident.len() > 1 => match ident.as_bytes()[1] {
 				b'h' if &ident[2..] == "is" => TokenKind::This,
-				b'r' if &ident[2..] == "rue" => TokenKind::True,
+				b'r' if &ident[2..] == "ue" => TokenKind::True,
 				_ => TokenKind::Identifier(ident),
 			},
 			_ => {
@@ -279,8 +279,8 @@ impl<'a> Scanner<'a> {
 					self.line += 1;
 					self.advance();
 				}
-				b'/' => {
-					if let Some(b'/') = self.peek_next() {
+				b'/' => match self.peek_next() {
+					Some(b'/') => {
 						while let Some(c_2) = self.peek() {
 							if c_2 == b'\n' {
 								break;
@@ -288,7 +288,10 @@ impl<'a> Scanner<'a> {
 							self.advance();
 						}
 					}
-				}
+					_ => {
+						break;
+					}
+				},
 				_ => break,
 			}
 		}

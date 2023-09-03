@@ -1,6 +1,6 @@
+use crate::chunk::{Chunk, OpCode};
 use crate::scanner::{self, Scanner, Token, TokenKind};
 use crate::value::Value;
-use crate::{Chunk, OpCode};
 use thiserror::Error;
 
 pub fn compile(source: &str, chunk: &mut Chunk, debug: bool) -> Result<(), Error> {
@@ -48,6 +48,7 @@ struct ParseRule<'a, 'b> {
 	precedence: Precedence,
 }
 
+#[allow(dead_code)]
 #[derive(Copy, Clone)]
 #[repr(u32)]
 enum Precedence {
@@ -56,6 +57,7 @@ enum Precedence {
 	Or,
 	And,
 	Equality,
+	Comparison,
 	Term,
 	Factor,
 	Unary,
@@ -179,7 +181,7 @@ impl<'a, 'b> Compiler<'a, 'b> {
 			panic!("expected number");
 		};
 		let num: f64 = num.parse().unwrap();
-		self.emit_constant(num)?;
+		self.emit_constant(Value::Number(num))?;
 		Ok(())
 	}
 
@@ -200,6 +202,7 @@ impl<'a, 'b> Compiler<'a, 'b> {
 		self.parse_precedence(Precedence::Unary)?;
 		match op_kind {
 			TokenKind::Minus => self.emit_byte(OpCode::Negate as u8),
+			TokenKind::Bang => self.emit_byte(OpCode::Not as u8),
 			_ => unreachable!(),
 		}
 		Ok(())
@@ -216,14 +219,37 @@ impl<'a, 'b> Compiler<'a, 'b> {
 			TokenKind::Minus => self.emit_byte(OpCode::Subtract as u8),
 			TokenKind::Star => self.emit_byte(OpCode::Multiply as u8),
 			TokenKind::Slash => self.emit_byte(OpCode::Divide as u8),
+			TokenKind::BangEqual => self.emit_bytes([OpCode::Equal as u8, OpCode::Not as u8]),
+			TokenKind::EqualEqual => self.emit_byte(OpCode::Equal as u8),
+			TokenKind::Greater => self.emit_byte(OpCode::Greater as u8),
+			TokenKind::GreaterEqual => self.emit_bytes([OpCode::Less as u8, OpCode::Not as u8]),
+			TokenKind::Less => self.emit_byte(OpCode::Less as u8),
+			TokenKind::LessEqual => self.emit_bytes([OpCode::Greater as u8, OpCode::Not as u8]),
 			_ => panic!("invalid operator: {:?}", operator_kind),
+		}
+		Ok(())
+	}
+
+	fn literal(&mut self) -> Result<(), Error> {
+		match self.parser.previous.as_ref().unwrap().kind {
+			TokenKind::Nil => self.emit_byte(OpCode::Nil as u8),
+			TokenKind::False => self.emit_byte(OpCode::False as u8),
+			TokenKind::True => self.emit_byte(OpCode::True as u8),
+			t => panic!("Invalid token: {:?}", t),
 		}
 		Ok(())
 	}
 
 	fn parse_precedence(&mut self, precedence: Precedence) -> Result<(), Error> {
 		self.advance()?;
-		let Some(prefix_rule): Option<ParseFn> = self.get_rule(&self.parser.previous.as_ref().unwrap().kind).prefix else {
+
+		let Some(prefix_rule): Option<ParseFn> = self
+			.parser
+			.previous
+			.as_ref()
+			.map(|t| t.kind)
+			.and_then(|k| self.get_rule(&k).prefix)
+		else {
 			return Err(Error::ExpectedExpression);
 		};
 
@@ -306,14 +332,14 @@ impl<'a, 'b> Compiler<'a, 'b> {
 				precedence: Precedence::Factor,
 			},
 			TokenKind::Bang => ParseRule {
-				prefix: None,
+				prefix: Some(Compiler::unary),
 				infix: None,
 				precedence: Precedence::None,
 			},
 			TokenKind::BangEqual => ParseRule {
 				prefix: None,
-				infix: None,
-				precedence: Precedence::None,
+				infix: Some(Compiler::binary),
+				precedence: Precedence::Equality,
 			},
 			TokenKind::Equal => ParseRule {
 				prefix: None,
@@ -322,30 +348,35 @@ impl<'a, 'b> Compiler<'a, 'b> {
 			},
 			TokenKind::EqualEqual => ParseRule {
 				prefix: None,
-				infix: None,
-				precedence: Precedence::None,
+				infix: Some(Compiler::binary),
+				precedence: Precedence::Equality,
 			},
 			TokenKind::Greater => ParseRule {
 				prefix: None,
-				infix: None,
-				precedence: Precedence::None,
+				infix: Some(Compiler::binary),
+				precedence: Precedence::Comparison,
 			},
 			TokenKind::GreaterEqual => ParseRule {
 				prefix: None,
-				infix: None,
-				precedence: Precedence::None,
+				infix: Some(Compiler::binary),
+				precedence: Precedence::Comparison,
 			},
 			TokenKind::Less => ParseRule {
 				prefix: None,
-				infix: None,
-				precedence: Precedence::None,
+				infix: Some(Compiler::binary),
+				precedence: Precedence::Comparison,
 			},
 			TokenKind::LessEqual => ParseRule {
+				prefix: None,
+				infix: Some(Compiler::binary),
+				precedence: Precedence::Comparison,
+			},
+			TokenKind::Identifier(_) => ParseRule {
 				prefix: None,
 				infix: None,
 				precedence: Precedence::None,
 			},
-			TokenKind::Identifier(_) => ParseRule {
+			TokenKind::String(_) => ParseRule {
 				prefix: None,
 				infix: None,
 				precedence: Precedence::None,
@@ -371,7 +402,7 @@ impl<'a, 'b> Compiler<'a, 'b> {
 				precedence: Precedence::None,
 			},
 			TokenKind::False => ParseRule {
-				prefix: None,
+				prefix: Some(Compiler::literal),
 				infix: None,
 				precedence: Precedence::None,
 			},
@@ -391,7 +422,7 @@ impl<'a, 'b> Compiler<'a, 'b> {
 				precedence: Precedence::None,
 			},
 			TokenKind::Nil => ParseRule {
-				prefix: None,
+				prefix: Some(Compiler::literal),
 				infix: None,
 				precedence: Precedence::None,
 			},
@@ -421,7 +452,7 @@ impl<'a, 'b> Compiler<'a, 'b> {
 				precedence: Precedence::None,
 			},
 			TokenKind::True => ParseRule {
-				prefix: None,
+				prefix: Some(Compiler::literal),
 				infix: None,
 				precedence: Precedence::None,
 			},
@@ -435,8 +466,6 @@ impl<'a, 'b> Compiler<'a, 'b> {
 				infix: None,
 				precedence: Precedence::None,
 			},
-
-			_ => todo!(),
 		}
 	}
 }
