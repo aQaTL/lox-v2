@@ -1,4 +1,5 @@
 use crate::chunk::{Chunk, OpCode};
+use crate::object::{Object, ObjectKind};
 use crate::scanner::{self, Scanner, Token, TokenKind};
 use crate::value::Value;
 use thiserror::Error;
@@ -182,6 +183,18 @@ impl<'a, 'b> Compiler<'a, 'b> {
 		};
 		let num: f64 = num.parse().unwrap();
 		self.emit_constant(Value::Number(num))?;
+		Ok(())
+	}
+
+	fn string(&mut self) -> Result<(), Error> {
+		let TokenKind::String(str) = self.parser.previous.as_ref().unwrap().kind else {
+			panic!("expected string");
+		};
+		//TODO(aqatl): Fix this leak
+		self.emit_constant(Value::Object(Box::into_raw(Box::new(Object {
+			kind: ObjectKind::String(str.to_string()),
+			next: std::ptr::null_mut(),
+		}))))?;
 		Ok(())
 	}
 
@@ -377,7 +390,7 @@ impl<'a, 'b> Compiler<'a, 'b> {
 				precedence: Precedence::None,
 			},
 			TokenKind::String(_) => ParseRule {
-				prefix: None,
+				prefix: Some(Compiler::string),
 				infix: None,
 				precedence: Precedence::None,
 			},

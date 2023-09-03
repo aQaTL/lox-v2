@@ -1,3 +1,4 @@
+use crate::object::Object;
 use std::fmt::{Display, Formatter};
 
 #[derive(Default, Clone, Debug)]
@@ -6,6 +7,7 @@ pub enum Value {
 	Nil,
 	Bool(bool),
 	Number(f64),
+	Object(*mut Object),
 }
 
 impl Value {
@@ -20,6 +22,7 @@ impl PartialEq for Value {
 			(Value::Nil, Value::Nil) => true,
 			(Value::Bool(a), Value::Bool(b)) => a == b,
 			(Value::Number(a), Value::Number(b)) => a == b,
+			(Value::Object(a), Value::Object(b)) => a == b,
 			_ => false,
 		}
 	}
@@ -31,6 +34,10 @@ impl Display for Value {
 			Self::Nil => write!(f, "nil"),
 			Self::Bool(b) => std::fmt::Display::fmt(b, f),
 			Self::Number(n) => std::fmt::Display::fmt(n, f),
+			Self::Object(o) => unsafe {
+				let o: &Object = &**o;
+				std::fmt::Display::fmt(o, f)
+			},
 		}
 	}
 }

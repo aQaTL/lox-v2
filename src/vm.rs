@@ -1,6 +1,9 @@
+use std::ptr;
 use thiserror::Error;
 
 use crate::chunk::InstructionKind;
+use crate::compiler::Error::ParserError;
+use crate::object::{Object, ObjectKind};
 use crate::value::Value;
 use crate::{
 	chunk::{Chunk, OpCode},
@@ -26,6 +29,9 @@ pub enum InterpretError {
 pub enum RuntimeError {
 	#[error(transparent)]
 	InvalidType(#[from] InvalidTypeError),
+
+	#[error(transparent)]
+	InvalidTypes(InvalidTypesError),
 }
 
 #[derive(Debug, Error)]
@@ -36,16 +42,50 @@ pub struct InvalidTypeError {
 }
 
 #[derive(Debug, Error)]
+#[error("{kind}, got {values:?}")]
+pub struct InvalidTypesError {
+	pub values: Vec<Value>,
+	pub kind: InvalidTypeErrorKind,
+}
+
+#[derive(Debug, Error)]
 pub enum InvalidTypeErrorKind {
 	#[error("Operand must be a number")]
 	ExpectedNumberOperand,
+
+	#[error("Operands must be two numbers or two strings")]
+	ExpectedNumberOrStringOperand,
 }
 
-#[derive(Default)]
 pub struct Vm {
 	pub debug: bool,
 
 	stack: Vec<Value>,
+	objects: *mut Object,
+}
+
+impl Default for Vm {
+	fn default() -> Self {
+		Vm {
+			debug: false,
+			stack: Vec::new(),
+			objects: ptr::null_mut(),
+		}
+	}
+}
+
+impl Drop for Vm {
+	fn drop(&mut self) {
+		// Free objects
+		unsafe {
+			let mut object = self.objects;
+			while !object.is_null() {
+				let next = (*object).next;
+				drop(Box::from_raw(object));
+				object = next;
+			}
+		}
+	}
 }
 
 impl Vm {
@@ -72,9 +112,9 @@ impl Vm {
 
 			match (instruction.opcode, instruction.kind) {
 				(OpCode::Return, _) => {
-					let val = self.stack.pop();
-					println!("{:?}", val);
-					return Ok(val.unwrap_or_default());
+					let val = self.stack.pop().unwrap_or_default();
+					println!("{val}");
+					return Ok(val);
 				}
 				(OpCode::Nil, _) => {
 					self.stack.push(Value::Nil);
@@ -117,17 +157,43 @@ impl Vm {
 					self.stack.push(Value::Bool(value_a < value_b));
 				}
 				(OpCode::Add, _) => {
-					let value_b = self.pop_number(
-						InvalidTypeErrorKind::ExpectedNumberOperand,
-						chunk,
-						offset,
-					)?;
-					let value_a = self.pop_number(
-						InvalidTypeErrorKind::ExpectedNumberOperand,
-						chunk,
-						offset,
-					)?;
-					self.stack.push(Value::Number(value_a + value_b));
+					let value_b = self.stack.pop().ok_or(InterpretError::GenericRuntime)?;
+					let value_a = self.stack.pop().ok_or(InterpretError::GenericRuntime)?;
+					match (&value_a, &value_b) {
+						(Value::Number(a), Value::Number(b)) => {
+							self.stack.push(Value::Number(a + b))
+						}
+						(Value::Object(a), Value::Object(b)) => unsafe {
+							let (a, b): (&Object, &Object) = (&**a, &**b);
+							match (&a.kind, &b.kind) {
+								(ObjectKind::String(str_a), ObjectKind::String(str_b)) => {
+									let object = self.allocate_object(ObjectKind::String(format!(
+										"{str_a}{str_b}"
+									)));
+									self.stack.push(Value::Object(object));
+								}
+								_ => {
+									return Err(InterpretError::Runtime {
+										source: RuntimeError::InvalidTypes(InvalidTypesError {
+											kind:
+												InvalidTypeErrorKind::ExpectedNumberOrStringOperand,
+											values: vec![value_a, value_b],
+										}),
+										line: *chunk.lines.get(offset).expect("fix your lines"),
+									})
+								}
+							}
+						},
+						_ => {
+							return Err(InterpretError::Runtime {
+								source: RuntimeError::InvalidTypes(InvalidTypesError {
+									kind: InvalidTypeErrorKind::ExpectedNumberOrStringOperand,
+									values: vec![value_a, value_b],
+								}),
+								line: *chunk.lines.get(offset).expect("fix your lines"),
+							})
+						}
+					}
 				}
 				(OpCode::Subtract, _) => {
 					let value_b = self.pop_number(
@@ -209,5 +275,15 @@ impl Vm {
 				line: *chunk.lines.get(offset).expect("fix your line vec"),
 			})?;
 		Ok(n)
+	}
+
+	fn allocate_object(&mut self, obj: ObjectKind) -> *mut Object {
+		let object = Box::new(Object {
+			kind: obj,
+			next: self.objects,
+		});
+		let object = Box::into_raw(object);
+		self.objects = object;
+		object
 	}
 }
