@@ -1,8 +1,10 @@
+use thiserror::Error;
+
 use crate::chunk::{Chunk, OpCode};
-use crate::object::{Object, ObjectKind};
+use crate::object;
+use crate::object::ObjectKind;
 use crate::scanner::{self, Scanner, Token, TokenKind};
 use crate::value::Value;
-use thiserror::Error;
 
 pub fn compile(source: &str, chunk: &mut Chunk, debug: bool) -> Result<(), Error> {
 	Compiler::new(source, chunk, debug).compile()
@@ -190,11 +192,8 @@ impl<'a, 'b> Compiler<'a, 'b> {
 		let TokenKind::String(str) = self.parser.previous.as_ref().unwrap().kind else {
 			panic!("expected string");
 		};
-		//TODO(aqatl): Fix this leak
-		self.emit_constant(Value::Object(Box::into_raw(Box::new(Object {
-			kind: ObjectKind::String(str.to_string()),
-			next: std::ptr::null_mut(),
-		}))))?;
+		let object = object::Allocator::new_global_object(ObjectKind::string(str.to_string()));
+		self.emit_constant(Value::Object(object))?;
 		Ok(())
 	}
 

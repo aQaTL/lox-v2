@@ -1,13 +1,11 @@
-use std::ptr;
 use thiserror::Error;
 
 use crate::chunk::InstructionKind;
-use crate::compiler::Error::ParserError;
 use crate::object::{Object, ObjectKind};
 use crate::value::Value;
 use crate::{
 	chunk::{Chunk, OpCode},
-	compiler,
+	compiler, object,
 };
 
 #[derive(Debug, Error)]
@@ -57,35 +55,12 @@ pub enum InvalidTypeErrorKind {
 	ExpectedNumberOrStringOperand,
 }
 
+#[derive(Default)]
 pub struct Vm {
 	pub debug: bool,
 
 	stack: Vec<Value>,
-	objects: *mut Object,
-}
-
-impl Default for Vm {
-	fn default() -> Self {
-		Vm {
-			debug: false,
-			stack: Vec::new(),
-			objects: ptr::null_mut(),
-		}
-	}
-}
-
-impl Drop for Vm {
-	fn drop(&mut self) {
-		// Free objects
-		unsafe {
-			let mut object = self.objects;
-			while !object.is_null() {
-				let next = (*object).next;
-				drop(Box::from_raw(object));
-				object = next;
-			}
-		}
-	}
+	objects: object::Allocator,
 }
 
 impl Vm {
@@ -167,9 +142,9 @@ impl Vm {
 							let (a, b): (&Object, &Object) = (&**a, &**b);
 							match (&a.kind, &b.kind) {
 								(ObjectKind::String(str_a), ObjectKind::String(str_b)) => {
-									let object = self.allocate_object(ObjectKind::String(format!(
-										"{str_a}{str_b}"
-									)));
+									let object = self
+										.objects
+										.new_object(ObjectKind::string(format!("{str_a}{str_b}")));
 									self.stack.push(Value::Object(object));
 								}
 								_ => {
@@ -275,15 +250,5 @@ impl Vm {
 				line: *chunk.lines.get(offset).expect("fix your line vec"),
 			})?;
 		Ok(n)
-	}
-
-	fn allocate_object(&mut self, obj: ObjectKind) -> *mut Object {
-		let object = Box::new(Object {
-			kind: obj,
-			next: self.objects,
-		});
-		let object = Box::into_raw(object);
-		self.objects = object;
-		object
 	}
 }
