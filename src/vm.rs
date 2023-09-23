@@ -66,7 +66,7 @@ pub struct Vm {
 impl Vm {
 	pub fn interpret(&mut self, source: &str) -> Result<Value, InterpretError> {
 		let mut chunk = Chunk::default();
-		compiler::compile(source, &mut chunk, self.debug)?;
+		compiler::compile(source, &mut chunk, self.debug, &mut self.objects)?;
 		self.run(&mut chunk)
 	}
 
@@ -141,10 +141,11 @@ impl Vm {
 						(Value::Object(a), Value::Object(b)) => unsafe {
 							let (a, b): (&Object, &Object) = (&**a, &**b);
 							match (&a.kind, &b.kind) {
-								(ObjectKind::String(str_a), ObjectKind::String(str_b)) => {
-									let object = self
-										.objects
-										.new_object(ObjectKind::string(format!("{str_a}{str_b}")));
+								(ObjectKind::String, ObjectKind::String) => {
+									let str_a = a.as_obj_string().unwrap();
+									let str_b = b.as_obj_string().unwrap();
+									let object =
+										self.objects.new_string_object(format!("{str_a}{str_b}"));
 									self.stack.push(Value::Object(object));
 								}
 								_ => {

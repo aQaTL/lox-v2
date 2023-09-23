@@ -22,7 +22,7 @@ impl PartialEq for Value {
 			(Value::Nil, Value::Nil) => true,
 			(Value::Bool(a), Value::Bool(b)) => a == b,
 			(Value::Number(a), Value::Number(b)) => a == b,
-			(Value::Object(a), Value::Object(b)) => a == b,
+			(Value::Object(a), Value::Object(b)) => std::ptr::eq(a, b),
 			_ => false,
 		}
 	}
@@ -36,7 +36,7 @@ impl Display for Value {
 			Self::Number(n) => std::fmt::Display::fmt(n, f),
 			Self::Object(o) => unsafe {
 				let o: &Object = &**o;
-				std::fmt::Display::fmt(o, f)
+				Display::fmt(o, f)
 			},
 		}
 	}

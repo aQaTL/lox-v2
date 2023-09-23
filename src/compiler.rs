@@ -2,12 +2,16 @@ use thiserror::Error;
 
 use crate::chunk::{Chunk, OpCode};
 use crate::object;
-use crate::object::ObjectKind;
 use crate::scanner::{self, Scanner, Token, TokenKind};
 use crate::value::Value;
 
-pub fn compile(source: &str, chunk: &mut Chunk, debug: bool) -> Result<(), Error> {
-	Compiler::new(source, chunk, debug).compile()
+pub fn compile(
+	source: &str,
+	chunk: &mut Chunk,
+	debug: bool,
+	objects: &mut object::Allocator,
+) -> Result<(), Error> {
+	Compiler::new(source, chunk, debug, objects).compile()
 }
 
 #[derive(Debug, Error)]
@@ -34,7 +38,7 @@ pub enum Error {
 	ExpectedExpression,
 }
 
-struct Compiler<'a, 'b> {
+struct Compiler<'a, 'b, 'c> {
 	scanner: Scanner<'a>,
 	chunk: &'b mut Chunk,
 	debug: bool,
@@ -43,11 +47,13 @@ struct Compiler<'a, 'b> {
 
 	parser_had_error: bool,
 	parser_panic_mode: bool,
+
+	objects: &'c mut object::Allocator,
 }
 
-struct ParseRule<'a, 'b> {
-	prefix: Option<ParseFn<'a, 'b>>,
-	infix: Option<ParseFn<'a, 'b>>,
+struct ParseRule<'a, 'b, 'c> {
+	prefix: Option<ParseFn<'a, 'b, 'c>>,
+	infix: Option<ParseFn<'a, 'b, 'c>>,
 	precedence: Precedence,
 }
 
@@ -68,10 +74,15 @@ enum Precedence {
 	Primary,
 }
 
-type ParseFn<'a, 'b> = fn(&mut Compiler<'a, 'b>) -> Result<(), Error>;
+type ParseFn<'a, 'b, 'c> = fn(&mut Compiler<'a, 'b, 'c>) -> Result<(), Error>;
 
-impl<'a, 'b> Compiler<'a, 'b> {
-	pub fn new(source: &'a str, chunk: &'b mut Chunk, debug: bool) -> Self {
+impl<'a, 'b, 'c> Compiler<'a, 'b, 'c> {
+	pub fn new(
+		source: &'a str,
+		chunk: &'b mut Chunk,
+		debug: bool,
+		objects: &'c mut object::Allocator,
+	) -> Self {
 		Compiler {
 			scanner: Scanner::new(source),
 			chunk,
@@ -82,6 +93,8 @@ impl<'a, 'b> Compiler<'a, 'b> {
 			},
 			parser_had_error: false,
 			parser_panic_mode: false,
+
+			objects,
 		}
 	}
 
@@ -192,7 +205,7 @@ impl<'a, 'b> Compiler<'a, 'b> {
 		let TokenKind::String(str) = self.parser.previous.as_ref().unwrap().kind else {
 			panic!("expected string");
 		};
-		let object = object::Allocator::new_global_object(ObjectKind::string(str.to_string()));
+		let object = self.objects.new_string_object(str.to_string());
 		self.emit_constant(Value::Object(object))?;
 		Ok(())
 	}
@@ -286,7 +299,7 @@ impl<'a, 'b> Compiler<'a, 'b> {
 		Ok(())
 	}
 
-	fn get_rule(&self, kind: &TokenKind<'a>) -> ParseRule<'a, 'b> {
+	fn get_rule(&self, kind: &TokenKind<'a>) -> ParseRule<'a, 'b, 'c> {
 		match kind {
 			TokenKind::LeftParen => ParseRule {
 				prefix: Some(Compiler::grouping),
