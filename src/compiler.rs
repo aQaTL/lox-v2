@@ -2,6 +2,7 @@ use thiserror::Error;
 
 use crate::chunk::{Chunk, OpCode};
 use crate::object;
+use crate::object::Object;
 use crate::scanner::{self, Scanner, Token, TokenKind};
 use crate::value::Value;
 
@@ -36,6 +37,9 @@ pub enum Error {
 
 	#[error("Expected expression")]
 	ExpectedExpression,
+
+	#[error("Expected variable name")]
+	ExpectedVariableName,
 }
 
 struct Compiler<'a, 'b, 'c> {
@@ -103,8 +107,11 @@ impl<'a, 'b, 'c> Compiler<'a, 'b, 'c> {
 		self.parser_panic_mode = false;
 
 		self.advance()?;
-		self.expression()?;
-		self.consume(None, Error::ExpectedEndOfExpr)?;
+
+		while !self.matches(None)? {
+			self.declaration()?;
+		}
+
 		self.end_compiler();
 
 		Ok(())
@@ -149,6 +156,18 @@ impl<'a, 'b, 'c> Compiler<'a, 'b, 'c> {
 		}
 	}
 
+	fn matches(&mut self, kind: Option<TokenKind>) -> Result<bool, Error> {
+		if !self.check(kind) {
+			return Ok(false);
+		}
+		self.advance()?;
+		Ok(true)
+	}
+
+	fn check(&mut self, kind: Option<TokenKind>) -> bool {
+		self.parser.current.as_ref().map(|token| token.kind) == kind
+	}
+
 	fn current_chunk(&mut self) -> &mut Chunk {
 		self.chunk
 	}
@@ -188,8 +207,104 @@ impl<'a, 'b, 'c> Compiler<'a, 'b, 'c> {
 		self.emit_return();
 	}
 
+	fn synchronize(&mut self) -> Result<(), Error> {
+		self.parser_panic_mode = false;
+
+		while self.parser.current.is_some() {
+			if self.parser.previous.as_ref().map(|token| token.kind) == Some(TokenKind::Semicolon) {
+				return Ok(());
+			}
+
+			match self.parser.current.as_ref().unwrap().kind {
+				TokenKind::Class
+				| TokenKind::Fun
+				| TokenKind::Var
+				| TokenKind::For
+				| TokenKind::If
+				| TokenKind::While
+				| TokenKind::Print
+				| TokenKind::Return => return Ok(()),
+				_ => (),
+			}
+
+			self.advance()?;
+		}
+
+		Ok(())
+	}
+
 	fn expression(&mut self) -> Result<(), Error> {
 		self.parse_precedence(Precedence::Assignment)
+	}
+
+	fn declaration(&mut self) -> Result<(), Error> {
+		let result = if self.matches(Some(TokenKind::Var))? {
+			self.var_declaration()
+		} else {
+			self.statement()
+		};
+		match result {
+			Err(Error::ParserError) if self.parser_panic_mode => {
+				self.synchronize()?;
+				Ok(())
+			}
+			r => r,
+		}
+	}
+
+	fn var_declaration(&mut self) -> Result<(), Error> {
+		let global = self.parse_variable(Error::ExpectedVariableName)?;
+
+		if self.matches(Some(TokenKind::Equal))? {
+			self.expression()?;
+		} else {
+			self.emit_byte(OpCode::Nil as u8);
+		}
+
+		self.consume(
+			Some(TokenKind::Semicolon),
+			Error::ExpectedToken {
+				token: ";",
+				after: "variable declaration",
+			},
+		)?;
+
+		self.define_variable(global);
+
+		Ok(())
+	}
+
+	fn statement(&mut self) -> Result<(), Error> {
+		if self.matches(Some(TokenKind::Print))? {
+			return self.print_statement();
+		}
+		self.expression_statement()
+	}
+
+	fn print_statement(&mut self) -> Result<(), Error> {
+		self.expression()?;
+		self.consume(
+			Some(TokenKind::Semicolon),
+			Error::ExpectedToken {
+				token: ";",
+				after: "value",
+			},
+		)?;
+		self.emit_byte(OpCode::Print as u8);
+		Ok(())
+	}
+
+	fn expression_statement(&mut self) -> Result<(), Error> {
+		self.expression()?;
+		self.consume(
+			Some(TokenKind::Semicolon),
+			Error::ExpectedToken {
+				token: ";",
+				after: "expression",
+			},
+		)?;
+		self.emit_byte(OpCode::Pop as u8);
+		Ok(())
 	}
 
 	fn number(&mut self) -> Result<(), Error> {
@@ -265,6 +380,21 @@ impl<'a, 'b, 'c> Compiler<'a, 'b, 'c> {
 		Ok(())
 	}
 
+	fn variable(&mut self) -> Result<(), Error> {
+		let name = match self.parser.previous.as_ref().unwrap().kind {
+			TokenKind::Identifier(ident) => ident,
+			kind => panic!("Expected Identifier, got {kind:?}"),
+		};
+		let name = self.objects.copy_string(name);
+		self.named_variable(name)
+	}
+
+	fn named_variable(&mut self, name: *mut Object) -> Result<(), Error> {
+		let arg = self.identifier_constant(name)?;
+		self.emit_bytes([OpCode::GetGlobal as u8, arg]);
+		Ok(())
+	}
+
 	fn parse_precedence(&mut self, precedence: Precedence) -> Result<(), Error> {
 		self.advance()?;
 
@@ -297,6 +427,30 @@ impl<'a, 'b, 'c> Compiler<'a, 'b, 'c> {
 		}
 
 		Ok(())
+	}
+
+	fn parse_variable(&mut self, err_msg: Error) -> Result<u8, Error> {
+		let var_ident = match self.parser.current.as_ref() {
+			Some(Token {
+				kind: TokenKind::Identifier(ident),
+				..
+			}) => {
+				let ident = self.objects.copy_string(ident);
+				self.advance()?;
+				ident
+			}
+			_ => return Err(err_msg),
+		};
+
+		self.identifier_constant(var_ident)
+	}
+
+	fn identifier_constant(&mut self, var_ident: *mut Object) -> Result<u8, Error> {
+		self.make_constant(Value::Object(var_ident))
+	}
+
+	fn define_variable(&mut self, global: u8) {
+		self.emit_bytes([OpCode::DefineGlobal as u8, global]);
 	}
 
 	fn get_rule(&self, kind: &TokenKind<'a>) -> ParseRule<'a, 'b, 'c> {
@@ -397,7 +551,7 @@ impl<'a, 'b, 'c> Compiler<'a, 'b, 'c> {
 				precedence: Precedence::Comparison,
 			},
 			TokenKind::Identifier(_) => ParseRule {
-				prefix: None,
+				prefix: Some(Compiler::variable),
 				infix: None,
 				precedence: Precedence::None,
 			},

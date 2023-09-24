@@ -20,6 +20,10 @@ pub enum OpCode {
 	Divide,
 	Not,
 	Negate,
+	Print,
+	Pop,
+	DefineGlobal,
+	GetGlobal,
 	Return,
 }
 
@@ -45,6 +49,10 @@ impl Display for OpCode {
 			OpCode::Divide => f.pad("OP_DIVIDE"),
 			OpCode::Negate => f.pad("OP_NEGATE"),
 			OpCode::Not => f.pad("OP_NOT"),
+			OpCode::Print => f.pad("OP_PRINT"),
+			OpCode::Pop => f.pad("OP_POP"),
+			OpCode::DefineGlobal => f.pad("OP_DEFINE_GLOBAL"),
+			OpCode::GetGlobal => f.pad("OP_GET_GLOBAL"),
 			OpCode::Return => f.pad("OP_RETURN"),
 		}
 	}
@@ -156,7 +164,7 @@ impl Chunk {
 		match opcode {
 			OpCode::Return => Some(Ok(Instruction::simple(opcode))),
 
-			OpCode::Constant => {
+			OpCode::Constant | OpCode::DefineGlobal | OpCode::GetGlobal => {
 				let constant_idx = *self.code.get(offset + 1)? as usize;
 				let constant = self.constants.get(constant_idx)?.clone();
 				Some(Ok(Instruction::constant(opcode, constant, constant_idx)))
@@ -173,6 +181,8 @@ impl Chunk {
 			| OpCode::Multiply
 			| OpCode::Divide
 			| OpCode::Not
+			| OpCode::Print
+			| OpCode::Pop
 			| OpCode::Negate => Some(Ok(Instruction::simple(opcode))),
 		}
 	}

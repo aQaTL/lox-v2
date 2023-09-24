@@ -229,9 +229,7 @@ mod tests {
 		let mut table = Table::default();
 
 		{
-			let key = allocator
-				.take_string("ala".to_string())
-				.cast::<ObjString>();
+			let key = allocator.take_string("ala".to_string()).cast::<ObjString>();
 
 			let value = Value::Object(allocator.take_string("ma kota".to_string()));
 			table.set(key, value);

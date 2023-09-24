@@ -1,11 +1,13 @@
+use std::io::{Stdout, Write};
 use thiserror::Error;
 
-use crate::chunk::InstructionKind;
-use crate::object::{Object, ObjectKind};
-use crate::value::Value;
+use crate::object::ObjString;
 use crate::{
-	chunk::{Chunk, OpCode},
-	compiler, object,
+	chunk::{Chunk, InstructionKind, OpCode},
+	compiler,
+	object::{self, Object, ObjectKind},
+	table::Table,
+	value::Value,
 };
 
 #[derive(Debug, Error)]
@@ -30,6 +32,9 @@ pub enum RuntimeError {
 
 	#[error(transparent)]
 	InvalidTypes(InvalidTypesError),
+
+	#[error("Undefined variable '{0}'.")]
+	UndefinedVariable(String),
 }
 
 #[derive(Debug, Error)]
@@ -55,15 +60,33 @@ pub enum InvalidTypeErrorKind {
 	ExpectedNumberOrStringOperand,
 }
 
-#[derive(Default)]
-pub struct Vm {
+pub struct Vm<W> {
 	pub debug: bool,
 
 	stack: Vec<Value>,
 	objects: object::Allocator,
+	globals: Table,
+
+	stdout: W,
 }
 
-impl Vm {
+impl Default for Vm<Stdout> {
+	fn default() -> Self {
+		Vm::new(std::io::stdout())
+	}
+}
+
+impl<W: Write> Vm<W> {
+	pub fn new(stdout: W) -> Vm<W> {
+		Vm {
+			debug: false,
+			stack: Vec::new(),
+			objects: Default::default(),
+			globals: Default::default(),
+			stdout,
+		}
+	}
+
 	pub fn interpret(&mut self, source: &str) -> Result<Value, InterpretError> {
 		let mut chunk = Chunk::default();
 		compiler::compile(source, &mut chunk, self.debug, &mut self.objects)?;
@@ -88,7 +111,6 @@ impl Vm {
 			match (instruction.opcode, instruction.kind) {
 				(OpCode::Return, _) => {
 					let val = self.stack.pop().unwrap_or_default();
-					println!("{val}");
 					return Ok(val);
 				}
 				(OpCode::Nil, _) => {
@@ -222,10 +244,36 @@ impl Vm {
 					)?;
 					self.stack.push(Value::Number(-value));
 				}
-				(_, InstructionKind::Constant { v, idx: _idx }) => {
+				(OpCode::Print, _) => {
+					let value = self.stack.pop().ok_or(InterpretError::GenericRuntime)?;
+					self.stdout.write_fmt(format_args!("{value}")).unwrap();
+				}
+				(OpCode::Pop, _) => {
+					self.stack.pop().ok_or(InterpretError::GenericRuntime)?;
+				}
+				(OpCode::Constant, InstructionKind::Constant { v, idx: _idx }) => {
 					self.stack.push(v);
 				}
-				_ => unimplemented!(),
+				(OpCode::DefineGlobal, InstructionKind::Constant { v, idx: _idx }) => {
+					let name = match v {
+						Value::Object(obj) => obj.cast::<ObjString>(),
+						_ => panic!(),
+					};
+					let value = self.stack.pop().unwrap();
+					self.globals.set(name, value);
+				}
+				(OpCode::GetGlobal, InstructionKind::Constant { v, idx: _idx }) => {
+					let name = match v {
+						Value::Object(obj) => obj.cast::<ObjString>(),
+						_ => panic!(),
+					};
+					let value = self.globals.get(name).ok_or(InterpretError::Runtime {
+						source: RuntimeError::UndefinedVariable(unsafe { (*name).to_string() }),
+						line: *chunk.lines.get(offset).expect("fix your lines"),
+					})?;
+					self.stack.push(value.clone());
+				}
+				(opcode, instruction_kind) => unimplemented!("{opcode:?}, {instruction_kind:?}"),
 			}
 		}
 
