@@ -38,7 +38,7 @@ impl Allocator {
 	}
 
 	/// Use only when you're sure that the `str` is unique (hasn't been allocated already).
-	pub fn new_string_object(&mut self, str: String) -> *mut Object {
+	fn new_string_object(&mut self, str: String) -> *mut Object {
 		let hash = hash(&str);
 		let obj = ObjString {
 			obj: Object {
@@ -87,6 +87,15 @@ impl Allocator {
 			return ObjString::into_object(interned);
 		}
 		self.new_string_object(str.to_string())
+	}
+
+	pub fn take_string(&mut self, str: String) -> *mut Object {
+		let hash = hash(&str);
+		let interned = self.strings.find_string(&str, hash);
+		match interned {
+			Some(interned) => interned.cast::<Object>(),
+			None => self.new_string_object(str),
+		}
 	}
 }
 

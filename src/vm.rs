@@ -145,7 +145,7 @@ impl Vm {
 									let str_a = a.as_obj_string().unwrap();
 									let str_b = b.as_obj_string().unwrap();
 									let object =
-										self.objects.new_string_object(format!("{str_a}{str_b}"));
+										self.objects.take_string(format!("{str_a}{str_b}"));
 									self.stack.push(Value::Object(object));
 								}
 								_ => {

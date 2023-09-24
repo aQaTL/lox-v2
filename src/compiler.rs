@@ -205,7 +205,7 @@ impl<'a, 'b, 'c> Compiler<'a, 'b, 'c> {
 		let TokenKind::String(str) = self.parser.previous.as_ref().unwrap().kind else {
 			panic!("expected string");
 		};
-		let object = self.objects.new_string_object(str.to_string());
+		let object = self.objects.copy_string(str);
 		self.emit_constant(Value::Object(object))?;
 		Ok(())
 	}
